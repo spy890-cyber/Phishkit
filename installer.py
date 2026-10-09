@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # installer.py — EWP installer. Runs on Windows/Mac/Linux.
 # Reads installer_config.json next to this file. Clones ./panel from the repo
-# if missing. SSHes the panel + install.sh to the VPS and runs the right mode.
+# on every install. SSHes the panel + install.sh to the VPS and runs the right mode.
 #
 # Requires: pip install -r requirements.txt
 
@@ -95,19 +95,26 @@ def preflight_repo(url, token, branch):
 
 
 def ensure_panel_cloned(cfg, log):
-    if (PANEL_DIR / "app.py").exists() and (PANEL_DIR / "install.sh").exists():
-        log("[ok] panel/ present locally")
-        return True
+    """Always refresh panel/ from the repo. Wipe any local copy first.
+
+    No heuristics, no "is app.py present?" checks. If the folder exists,
+    it's stale — remove it and clone fresh. This kills the whole class of
+    'destination path already exists and is not an empty directory' errors
+    and guarantees the local panel always matches the repo."""
     url = cfg["repo_url"]
     if not url:
         log("[err] repo_url not set")
         return False
+
+    if PANEL_DIR.exists():
+        log("[*] removing existing panel/ and re-cloning")
+        shutil.rmtree(PANEL_DIR, ignore_errors=True)
+
     clone_url = url
     if cfg.get("repo_token") and "github.com" in url:
         clone_url = url.replace("https://", f"https://x-access-token:{cfg['repo_token']}@")
+
     log(f"[*] cloning panel/ from {url} (branch {cfg.get('repo_branch','main')})")
-    if PANEL_DIR.exists():
-        shutil.rmtree(PANEL_DIR, ignore_errors=True)
     try:
         r = subprocess.run(
             ["git", "clone", "--depth", "1",
@@ -118,6 +125,19 @@ def ensure_panel_cloned(cfg, log):
         if r.returncode != 0:
             log(f"[err] git clone failed: {r.stderr.strip()}")
             return False
+
+        # Edge case: if GitHub ever serves a nested panel/panel, flatten it.
+        nested = PANEL_DIR / "panel"
+        if nested.is_dir() and not (PANEL_DIR / "app.py").exists():
+            log("[*] flattening nested panel/panel")
+            for item in nested.iterdir():
+                shutil.move(str(item), str(PANEL_DIR / item.name))
+            nested.rmdir()
+
+        if not (PANEL_DIR / "app.py").exists():
+            log("[err] clone succeeded but app.py is missing — repo layout unexpected")
+            return False
+
         log("[ok] panel/ cloned")
         return True
     except FileNotFoundError:
@@ -129,6 +149,8 @@ def ensure_panel_cloned(cfg, log):
 
 
 def refresh_panel(cfg, log):
+    """The Refresh button — this one does NOT wipe. Use it when you have
+    local edits you want to preserve while pulling new commits on top."""
     if not PANEL_DIR.exists():
         log("[*] nothing to refresh — run INSTALL first")
         return
@@ -178,6 +200,8 @@ def stream_cmd(client, cmd, log):
 
 
 def scp_tree(client, src: Path, dst: str, log):
+    """Copy the CONTENTS of src (a local folder) into dst on the VPS.
+    Local src/app.py becomes dst/app.py — not dst/src/app.py."""
     log(f"[*] scp {src.name} -> {dst}")
     stream_cmd(client, f"rm -rf {dst} && mkdir -p {dst}", log)
     sftp = client.open_sftp()
@@ -206,7 +230,7 @@ def scp_file(client, src: Path, dst: str, log):
 
 def run_install(cfg, mode, log):
     log(f"[*] mode: {mode}")
-    log("[*] ensuring panel/ is present")
+    log("[*] ensuring panel/ is present (fresh clone)")
     if not ensure_panel_cloned(cfg, log):
         log("[err] aborting")
         return False
@@ -226,9 +250,8 @@ def run_install(cfg, mode, log):
         return False
 
     try:
-        # Copy local panel/ into /tmp/ewp-panel/panel so install.sh, which
-        # expects $PKG_DIR/panel/..., finds every file at the right path.
-        scp_tree(client, PANEL_DIR, "/tmp/ewp-panel/panel", log)
+        # Local panel/* goes into /tmp/ewp-panel/* (contents dumped straight in)
+        scp_tree(client, PANEL_DIR, "/tmp/ewp-panel", log)
         scp_file(client, PANEL_DIR / "install.sh", "/tmp/ewp-install.sh", log)
         stream_cmd(client, "chmod +x /tmp/ewp-install.sh && sed -i 's/\\r$//' /tmp/ewp-install.sh", log)
 
