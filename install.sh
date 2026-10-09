@@ -48,7 +48,9 @@ panel_only() {
   mkdir -p "$PANEL_DIR/static/logos"
   install -m 0644 "$PKG_DIR/static/app.js"       "$PANEL_DIR/static/app.js"
   install -m 0644 "$PKG_DIR/static/style.css"    "$PANEL_DIR/static/style.css"
-  install -m 0644 "$PKG_DIR/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
+  if compgen -G "$PKG_DIR/static/logos/*.svg" > /dev/null; then
+    install -m 0644 "$PKG_DIR/static/logos/"*.svg "$PANEL_DIR/static/logos/"
+  fi
   ok "panel-only: replace files"
 
   step "panel-only: restart"
@@ -118,7 +120,10 @@ install_panel_files() {
   install -m 0644 "$PKG_DIR/templates_registry.py" "$PANEL_DIR/templates_registry.py"
   install -m 0644 "$PKG_DIR/static/app.js"       "$PANEL_DIR/static/app.js"
   install -m 0644 "$PKG_DIR/static/style.css"    "$PANEL_DIR/static/style.css"
-  install -m 0644 "$PKG_DIR/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
+  mkdir -p "$PANEL_DIR/static/logos"
+  if compgen -G "$PKG_DIR/static/logos/*.svg" > /dev/null; then
+    install -m 0644 "$PKG_DIR/static/logos/"*.svg "$PANEL_DIR/static/logos/"
+  fi
   ok "panel files"
 }
 
