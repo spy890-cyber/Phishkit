@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-# installer.py — EWP installer. Runs on Windows/Mac/Linux.
-# Reads installer_config.json next to this file. Refreshes ./panel from the repo
-# on every install. SSHes the panel + install.sh to the VPS and runs the right mode.
-#
-# Requires: pip install -r requirements.txt
+# installer.py — EWP installer.
+# Reads installer_config.json next to this file. Clones ./panel from the repo
+# on every install. SSHes the panel + install.sh to the VPS and runs the mode.
 
 import json
 import os
@@ -11,8 +9,8 @@ import shutil
 import subprocess
 import sys
 import threading
-import queue
 import time
+import queue
 import webbrowser
 from pathlib import Path
 
@@ -41,8 +39,6 @@ PANEL_DIR    = HERE / "panel"
 KNOWN_HOSTS  = HERE / "known_hosts"
 
 # The exact set of files install.sh expects under /tmp/ewp-panel/<path>.
-# Any file not listed here is never sent — so no stray installer files,
-# no .git, no docs, nothing the VPS doesn't need.
 PANEL_FILES = [
     "app.py",
     "db.py",
@@ -122,108 +118,125 @@ def preflight_repo(url, token, branch):
         return False, f"network error: {e}"
 
 
-def _verify_panel(log):
-    """Confirm the essentials are present after clone / reset."""
-    needed = ["app.py", "install.sh", "static/app.js", "static/style.css"]
-    missing = [p for p in needed if not (PANEL_DIR / p.replace("/", os.sep)).exists()]
-    if missing:
-        log(f"[err] panel/ refresh incomplete — missing: {', '.join(missing)}")
-        return False
-    log("[ok] panel/ verified")
+def _panel_looks_ok():
+    """True if panel/ has the essentials for install.sh to succeed."""
+    for p in ("app.py", "static/app.js", "static/logos/teams.svg"):
+        if not (PANEL_DIR / p.replace("/", os.sep)).exists():
+            return False
     return True
 
 
-def ensure_panel_cloned(cfg, log):
-    """Refresh panel/ from the repo.
-
-    Strategy:
-      1. If the folder doesn't exist, clone fresh.
-      2. If it exists and is a git repo, fetch + hard-reset + clean.
-         This survives Windows file locks that block rmtree.
-      3. If it exists but isn't a git repo (or reset failed), wipe it
-         with retries and clone fresh.
-    """
-    url = cfg["repo_url"]
-    if not url:
-        log("[err] repo_url not set")
+def _refresh_via_git(cfg, log):
+    """If panel/ is a git repo, fetch + reset. No `git clean` — that would
+    delete untracked files the repo hasn't committed yet."""
+    branch = cfg.get("repo_branch", "main")
+    log("[*] panel/ is a git repo — fetch + reset")
+    try:
+        fetch = subprocess.run(
+            ["git", "-C", str(PANEL_DIR), "fetch", "origin", branch, "--depth", "1"],
+            capture_output=True, text=True, timeout=120)
+        if fetch.returncode != 0:
+            log(f"[warn] fetch failed: {fetch.stderr.strip()}")
+            return False
+        reset = subprocess.run(
+            ["git", "-C", str(PANEL_DIR), "reset", "--hard", f"origin/{branch}"],
+            capture_output=True, text=True, timeout=120)
+        if reset.returncode != 0:
+            log(f"[warn] reset failed: {reset.stderr.strip()}")
+            return False
+        log("[ok] panel/ refreshed via git")
+        return _panel_looks_ok()
+    except Exception as e:
+        log(f"[warn] git refresh error: {e}")
         return False
 
+
+def _clone_panel(cfg, log):
+    url = cfg["repo_url"]
     branch = cfg.get("repo_branch", "main")
     clone_url = url
     if cfg.get("repo_token") and "github.com" in url:
         clone_url = url.replace("https://", f"https://x-access-token:{cfg['repo_token']}@")
-
-    # Case 2 — existing git repo: reset instead of delete+clone.
-    if (PANEL_DIR / ".git").is_dir():
-        log("[*] panel/ exists as a git repo — hard reset + pull")
-        try:
-            subprocess.run(
-                ["git", "-C", str(PANEL_DIR), "fetch", "origin", branch, "--depth", "1"],
-                capture_output=True, text=True, timeout=120, check=False,
-            )
-            r1 = subprocess.run(
-                ["git", "-C", str(PANEL_DIR), "reset", "--hard", f"origin/{branch}"],
-                capture_output=True, text=True, timeout=120, check=False,
-            )
-            if r1.returncode == 0:
-                subprocess.run(
-                    ["git", "-C", str(PANEL_DIR), "clean", "-fdx"],
-                    capture_output=True, text=True, timeout=120, check=False,
-                )
-                log("[ok] panel/ refreshed via git")
-                return _verify_panel(log)
-            log(f"[warn] reset failed: {r1.stderr.strip()} — will try full wipe")
-        except Exception as e:
-            log(f"[warn] git refresh failed: {e} — will try full wipe")
-
-    # Case 3 — folder exists but isn't a git repo (or reset failed): wipe it.
-    if PANEL_DIR.exists():
-        log("[*] removing existing panel/ (with retries)")
-        for attempt in range(5):
-            try:
-                shutil.rmtree(PANEL_DIR)
-                break
-            except Exception as e:
-                log(f"[warn] wipe attempt {attempt+1}/5 failed: {e}")
-                time.sleep(1.0)
-        time.sleep(1.0)
-        if PANEL_DIR.exists():
-            log("[err] could not remove panel/ — something is holding a file open.")
-            log("[err] close VS Code / any editor with a file in that folder, and retry.")
-            return False
-
-    # Case 1 — fresh clone.
     log(f"[*] cloning panel/ from {url} (branch {branch})")
     try:
         r = subprocess.run(
-            ["git", "clone", "--depth", "1",
-             "--branch", branch,
+            ["git", "clone", "--depth", "1", "--branch", branch,
              clone_url, str(PANEL_DIR)],
-            capture_output=True, text=True, timeout=180,
-        )
+            capture_output=True, text=True, timeout=180)
         if r.returncode != 0:
             log(f"[err] git clone failed: {r.stderr.strip()}")
             return False
-
+        # flatten nested panel/panel if the repo layout ever nests
         nested = PANEL_DIR / "panel"
         if nested.is_dir() and not (PANEL_DIR / "app.py").exists():
             log("[*] flattening nested panel/panel")
             for item in nested.iterdir():
                 shutil.move(str(item), str(PANEL_DIR / item.name))
             nested.rmdir()
-
+        if not _panel_looks_ok():
+            log("[warn] clone succeeded but panel/ is missing files — continuing anyway")
         log("[ok] panel/ cloned")
-        return _verify_panel(log)
+        return True
     except FileNotFoundError:
-        log("[err] git not found. Install git and retry.")
+        log("[err] git not found on this machine.")
         return False
     except Exception as e:
         log(f"[err] clone error: {e}")
         return False
 
 
+def ensure_panel_cloned(cfg, log):
+    """Make sure panel/ matches the repo.
+
+    Windows holds file locks on .git/objects during antivirus scans. So when
+    the folder needs to be replaced, rename it aside (os.rename works even
+    with locked files inside) and clone fresh into place. The renamed folder
+    is deleted best-effort afterward — if it's still locked, the install
+    continues anyway."""
+    if not cfg.get("repo_url"):
+        log("[err] repo_url not set")
+        return False
+
+    # Happy path: valid git repo, refresh in place
+    if (PANEL_DIR / ".git").is_dir():
+        if _refresh_via_git(cfg, log):
+            log("[ok] panel/ verified")
+            return True
+        log("[warn] in-place refresh incomplete — cloning into a fresh folder")
+
+    # Fallback: rename aside, clone fresh
+    if PANEL_DIR.exists():
+        aside = PANEL_DIR.parent / (PANEL_DIR.name + "_old")
+        if aside.exists():
+            shutil.rmtree(aside, ignore_errors=True)
+        log(f"[*] moving existing {PANEL_DIR.name}/ aside")
+        try:
+            os.rename(str(PANEL_DIR), str(aside))
+        except Exception as e:
+            log(f"[err] could not move panel/ aside: {e}")
+            log("[err] close any editor/antivirus holding files in panel/, then retry")
+            return False
+
+        if not _clone_panel(cfg, log):
+            return False
+
+        # best-effort cleanup of the old folder
+        try:
+            shutil.rmtree(aside, ignore_errors=True)
+        except Exception:
+            pass
+
+        log("[ok] panel/ verified")
+        return True
+
+    # No existing folder — fresh clone
+    if _clone_panel(cfg, log):
+        log("[ok] panel/ verified")
+        return True
+    return False
+
+
 def refresh_panel(cfg, log):
-    """The Refresh button — same as ensure_panel_cloned but doesn't insist on files."""
     if not PANEL_DIR.exists():
         log("[*] nothing to refresh — run INSTALL first")
         return
@@ -277,36 +290,35 @@ def push_panel(client, log):
     Uses forward slashes only, so Windows backslashes can never leak into
     remote directory names."""
     DEST = "/tmp/ewp-panel"
-
     log(f"[*] preparing {DEST} on VPS")
     stream_cmd(client, f"rm -rf {DEST} && mkdir -p {DEST}", log)
 
     sftp = client.open_sftp()
     try:
-        # 1. mkdir every unique remote subdirectory first (forward slashes)
         dirs_needed = set()
         for rel in PANEL_FILES:
             parts = rel.split("/")
             for i in range(1, len(parts)):
                 dirs_needed.add("/".join(parts[:i]))
         for d in sorted(dirs_needed):
-            remote_dir = f"{DEST}/{d}"
+            rd = f"{DEST}/{d}"
             try:
-                sftp.stat(remote_dir)
+                sftp.stat(rd)
             except IOError:
-                sftp.mkdir(remote_dir)
+                sftp.mkdir(rd)
 
-        # 2. put each file
         count = 0
+        missing = []
         for rel in PANEL_FILES:
             local_path = PANEL_DIR / rel.replace("/", os.sep)
             if not local_path.exists():
-                log(f"[warn] missing locally, skipping: {rel}")
+                missing.append(rel)
                 continue
-            remote_path = f"{DEST}/{rel}"
-            sftp.put(str(local_path), remote_path)
+            sftp.put(str(local_path), f"{DEST}/{rel}")
             count += 1
         log(f"[ok] uploaded {count}/{len(PANEL_FILES)} files")
+        if missing:
+            log(f"[warn] missing locally: {', '.join(missing)}")
     finally:
         sftp.close()
 
@@ -343,7 +355,8 @@ def run_install(cfg, mode, log):
 
     try:
         push_panel(client, log)
-        scp_file(client, PANEL_DIR / "install.sh", "/tmp/ewp-install.sh", log)
+        # Send the local install.sh from HERE (top-level), not from panel/.
+        scp_file(client, HERE / "install.sh", "/tmp/ewp-install.sh", log)
         stream_cmd(client, "chmod +x /tmp/ewp-install.sh && sed -i 's/\\r$//' /tmp/ewp-install.sh", log)
 
         env = (
