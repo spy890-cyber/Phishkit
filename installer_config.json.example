@@ -1,0 +1,15 @@
+{
+  "ip": "",
+  "port": "22",
+  "user": "root",
+  "password": "",
+  "domain": "",
+  "cf_token": "",
+  "repo_url": "https://github.com/CHANGE_ME/ewp-installer.git",
+  "repo_branch": "main",
+  "repo_token": "",
+  "install_mode": "full",
+  "save_password": true,
+  "last_url": "",
+  "last_panel_password": ""
+}

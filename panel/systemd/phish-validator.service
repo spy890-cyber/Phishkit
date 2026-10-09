@@ -1,0 +1,7 @@
+[Unit]
+Description=Refresh token validator
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/phish
+ExecStart=/opt/phish/venv/bin/python3 /opt/phish/validator.py

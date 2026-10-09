@@ -1,0 +1,8 @@
+[Unit]
+Description=Flush queued Telegram messages
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/phish
+WorkingDirectory=/opt/phish
+ExecStart=/opt/phish/venv/bin/python3 -c "from telegram import flush_queue; flush_queue()"
